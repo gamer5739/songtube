@@ -30,42 +30,14 @@ jobs:
             fi
           fi
 
-      # 2. Python se Build.gradle ki Line 62 ko exact fix karna
-      - name: Robust Fix for Gradle Null Path
-        run: |
-          touch android/local.properties
-          python3 -c '
-          import os
-          file_path = "android/app/build.gradle"
-          if os.path.exists(file_path):
-              with open(file_path, "r") as f:
-                  lines = f.readlines()
-              
-              # Line 62 dynamic targeting (index 61)
-              # Hum pure file me jaha bhi property loading hai usme safe check dal rahe hain
-              new_lines = []
-              for line in lines:
-                  if "properties.getProperty" in line and "file" in line:
-                      # Agar line me file path retrieve ho raha hai toh null check lagao
-                      line = line.replace("properties.getProperty", "properties.getProperty")
-                  new_lines.append(line)
-                  
-              # Crash rokne ke liye direct line 62 ke pattern ko replace karna
-              content = "".join(new_lines)
-              content = content.replace("rootProject.file(properties.getProperty(", "rootProject.file(properties.getProperty(")
-              
-              # A safe bypass: Agar path abhi bhi dikkat de toh temporary string mapping
-              with open(file_path, "w") as f:
-                  f.write(content)
-              print("Python patch applied successfully!")
-          '
-
+      # 2. Java Setup (Flutter setup se pehle zaroori hai)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
+      # 3. Flutter SDK Setup karna
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -73,15 +45,35 @@ jobs:
           channel: 'stable'
           cache: true
 
+      # 4. Super Fix: Saare expected paths ko pehle hi generate kar dena
+      - name: Inject Complete Local Properties
+        run: |
+          mkdir -p android
+          # Flutter SDK ka real path aur Android SDK ka path local.properties me daalna
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+          
+          # Agar project ko flutter.versionName ya flutter.versionCode chahiye ho
+          echo "flutter.versionName=1.0.0" >> android/local.properties
+          echo "flutter.versionCode=1" >> android/local.properties
+          
+          # Ek backup empty file create karna agar koi key-store path null dhoond raha ho
+          touch android/dummy_path.jks
+          
+          echo "Generated local.properties content:"
+          cat android/local.properties
+
+      # 5. Dependencies download karna
       - name: Install dependencies
         run: |
           flutter clean
           flutter pub get
 
-      # 3. Build flags
+      # 6. APK Build karna
       - name: Build APK
         run: flutter build apk --release --split-per-abi --no-shrink
 
+      # 7. Upload Artifact
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
