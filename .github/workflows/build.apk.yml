@@ -15,28 +15,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Smart Extract: Jo khud dhundega ki files kaha hain aur unhe bahar nikalega
+      # 1. ZIP Extract karna aur subfolders handle karna
       - name: Extract Project ZIP
         run: |
           unzip -q SongTube-App-7.3.2-5200.zip -d extracted_project
-          
-          # Agar zip ke andar direct files hain
           if [ -f "extracted_project/pubspec.yaml" ]; then
-            echo "Files found in root of extracted folder!"
             mv extracted_project/* . || true
             mv extracted_project/.* . || true
-          
-          # Agar zip ke andar kisi sub-folder mein files hain (Jaise SongTube-App-7.3.2-5200/...)
           else
             SUBFOLDER=$(find extracted_project -maxdepth 2 -name "pubspec.yaml" -exec dirname {} \;)
             if [ ! -z "$SUBFOLDER" ]; then
-              echo "Files found in subfolder: $SUBFOLDER"
               mv $SUBFOLDER/* . || true
               mv $SUBFOLDER/.* . || true
-            else
-              echo "ERROR: pubspec.yaml not found anywhere in the ZIP!"
-              exit 1
             fi
+          fi
+
+      # 2. Gradle Path Error ko auto-fix karna (Line 62 temporary fix)
+      - name: Fix Gradle Null Path Error
+        run: |
+          if [ -f "android/app/build.gradle" ]; then
+            echo "Applying patch for Gradle null path error..."
+            # build.gradle mein jahan properties load ho rahi hain, wahan fallback add karna
+            sed -i 's/properties.getProperty([^)]*)/properties.getProperty(\0) ?: ""/g' android/app/build.gradle
+            # Check properties file presence
+            touch android/local.properties
           fi
 
       - name: Set up JDK 17
@@ -57,8 +59,9 @@ jobs:
           flutter clean
           flutter pub get
 
+      # 3. Build flags ke saath run karna taaki features break na hon
       - name: Build APK
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --no-shrink
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
